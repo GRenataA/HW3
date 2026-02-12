@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Driven Decision System · Sentiment to Action</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            max-width: 700px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            background: #f9fafb;
+            color: #111827;
+        }
+        h1 {
+            font-size: 1.8rem;
+            border-bottom: 3px solid #3b82f6;
+            padding-bottom: 0.5rem;
+        }
+        .card {
+            background: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            margin: 1.5rem 0;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-top: 1rem;
+            margin-bottom: 0.25rem;
+            color: #374151;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 1rem;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .status {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            background: #f3f4f6;
+            border-radius: 0.5rem;
+            font-size: 0.9rem;
+            color: #1f2937;
+            word-break: break-word;
+        }
+        #action-result {
+            padding: 1.25rem;
+            border-radius: 0.75rem;
+            margin-top: 1.5rem;
+            font-weight: 600;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .sentiment-badge {
+            display: inline-block;
+            padding: 0.25rem 1rem;
+            border-radius: 9999px;
+            background: #e5e7eb;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #1f2937;
+            margin-top: 0.5rem;
+        }
+        .hidden {
+            display: none;
+        }
+        hr {
+            border: 1px solid #e5e7eb;
+            margin: 2rem 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🛡️ Automatic Firefighter · CRM</h1>
+    <p>Connect your AI models and let the system act automatically.</p>
+
+    <!-- ========== CONFIGURATION CARD ========== -->
+    <div class="card">
+        <h3>🔧 1. Configuration</h3>
+        
+        <label>🤗 Hugging Face API Token</label>
+        <input type="text" id="hfToken" placeholder="hf_xxxxxxxxxxxxxxxxxxxx" value="">
+        <button id="saveTokenBtn">Save Token</button>
+        
+        <label>📊 Google Sheets Web App URL</label>
+        <input type="url" id="gasUrl" placeholder="https://script.google.com/macros/s/.../exec">
+        <button id="saveUrlBtn">Save Web App URL</button>
+        
+        <div id="configStatus" class="status">⚙️ Ready – paste your keys and save them.</div>
+    </div>
+
+    <!-- ========== ANALYSIS CARD ========== -->
+    <div class="card">
+        <h3>✍️ 2. Customer Review</h3>
+        <label for="reviewText">What did the customer say?</label>
+        <textarea id="reviewText" placeholder="e.g. The product arrived broken, very disappointed..."></textarea>
+        <button id="analyzeBtn">🔍 Analyze & Take Action</button>
+        
+        <!-- Spinner / loading (hidden by default) -->
+        <div id="loading" class="hidden" style="margin-top:1rem; color:#6b7280;">⏳ Analyzing sentiment...</div>
+    </div>
+
+    <!-- ========== DECISION OUTPUT ========== -->
+    <div id="action-result" style="background:#f3f4f6; color:#111827;">
+        💬 Awaiting a review...
+    </div>
+
+    <!-- Optional raw sentiment display -->
+    <div id="sentimentMeta" style="font-size:0.9rem; color:#4b5563; margin-top:0.5rem;"></div>
+
+    <!-- ========== LOG STATUS ========== -->
+    <div id="logStatus" class="status" style="background:#e0f2fe;">📋 Log ready</div>
+
+    <hr>
+    <p style="font-size:0.8rem; color:#6b7280; text-align:center;">
+        AI‑Driven Decision System · Assignment: From Insight to Action
+    </p>
+
+    <script>
+        // -------------------------------------------------------------
+        //  CONSTANTS & CONFIG
+        // -------------------------------------------------------------
+        const HF_API_URL = "https://router.huggingface.co/hf-inference/models/cardiffnlp/twitter-roberta-base-sentiment-latest";
+        const LS_TOKEN_KEY = "hf_token";
+        const LS_URL_KEY = "gas_url";
+        const LS_UID_KEY = "uid";
+
+        // -------------------------------------------------------------
+        //  UTILITIES: localStorage, user ID
+        // -------------------------------------------------------------
+        function getUserId() {
+            let uid = localStorage.getItem(LS_UID_KEY);
+            if (!uid) {
+                uid = crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
+                localStorage.setItem(LS_UID_KEY, uid);
+            }
+            return uid;
+        }
+
+        // Load saved token into input field
+        function loadSavedToken() {
+            const saved = localStorage.getItem(LS_TOKEN_KEY);
+            if (saved) {
+                document.getElementById('hfToken').value = saved;
+            }
+        }
+        function saveToken() {
+            const token = document.getElementById('hfToken').value.trim();
+            if (!token) {
+                document.getElementById('configStatus').textContent = '❌ Please enter a token.';
+                return;
+            }
+            localStorage.setItem(LS_TOKEN_KEY, token);
+            document.getElementById('configStatus').textContent = '✅ Hugging Face token saved.';
+        }
+
+        // GAS URL – same logic as the provided logger
+        function getGasUrl() {
+            const input = document.getElementById('gasUrl');
+            const entered = (input?.value || '').trim();
+            if (entered) return entered;
+            const saved = (localStorage.getItem(LS_URL_KEY) || '').trim();
+            if (input && saved) input.value = saved;
+            return saved;
+        }
+        function saveGasUrl() {
+            const status = document.getElementById('configStatus');
+            const url = (document.getElementById('gasUrl')?.value || '').trim();
+            if (!url) {
+                status.textContent = '❌ Paste your Apps Script Web App URL (ends with /exec).';
+                return;
+            }
+            try { new URL(url); } catch { status.textContent = '❌ Invalid URL format.'; return; }
+            localStorage.setItem(LS_URL_KEY, url);
+            status.textContent = '✅ Web App URL saved.';
+        }
+
+        // -------------------------------------------------------------
+        //  BUSINESS LOGIC (determine action)
+        // -------------------------------------------------------------
+        function determineBusinessAction(confidence, label) {
+            // 1. Normalize score: 0 (worst) ... 1 (best)
+            let normalizedScore = 0.5; // fallback neutral
+
+            if (label === "POSITIVE") {
+                normalizedScore = confidence;
+            } else if (label === "NEGATIVE") {
+                normalizedScore = 1.0 - confidence;
+            } else {
+                // unknown label → treat as neutral / low confidence
+                normalizedScore = 0.5;
+            }
+
+            // 2. Thresholds according to assignment
+            if (normalizedScore <= 0.4) {
+                return {
+                    actionCode: "OFFER_COUPON",
+                    uiMessage: "🚨 We are truly sorry. Please accept this 50% discount coupon.",
+                    uiColor: "#ef4444" // red
+                };
+            } else if (normalizedScore < 0.7) {
+                return {
+                    actionCode: "REQUEST_FEEDBACK",
+                    uiMessage: "📝 Thank you! Could you tell us how we can improve?",
+                    uiColor: "#6b7280" // gray
+                };
+            } else {
+                return {
+                    actionCode: "ASK_REFERRAL",
+                    uiMessage: "⭐ Glad you liked it! Refer a friend and earn rewards.",
+                    uiColor: "#3b82f6" // blue
+                };
+            }
+        }
+
+        // -------------------------------------------------------------
+        //  LOGGING TO GOOGLE SHEETS (CORS‑safe, x-www-form-urlencoded)
+        // -------------------------------------------------------------
+        async function logSentiment(review, sentimentLabel, confidence, actionCode) {
+            const statusEl = document.getElementById('logStatus');
+            const url = getGasUrl();
+            if (!url) {
+                statusEl.textContent = '❌ Missing Web App URL. Save it first.';
+                return;
+            }
+
+            const form = new URLSearchParams();
+            form.set('review', review);
+            form.set('sentiment', sentimentLabel);
+            form.set('confidence', confidence.toString());
+            form.set('action_taken', actionCode);
+            form.set('userId', getUserId());
+            form.set('ts', Date.now().toString());
+
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    body: form  // no custom headers → no preflight
+                });
+                const text = await res.text();
+                if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
+                statusEl.textContent = '✅ Logged to Google Sheets';
+                statusEl.style.background = '#dcfce7';
+            } catch (err) {
+                statusEl.textContent = `❌ Log failed: ${err.message}`;
+                statusEl.style.background = '#fee2e2';
+                console.error(err);
+            }
+        }
+
+        // -------------------------------------------------------------
+        //  MAIN ANALYSIS: Hugging Face → decision → UI → log
+        // -------------------------------------------------------------
+        async function analyzeAndAct() {
+            const review = document.getElementById('reviewText').value.trim();
+            if (!review) {
+                alert('Please enter a review.');
+                return;
+            }
+
+            // 1. Retrieve token
+            const token = localStorage.getItem(LS_TOKEN_KEY);
+            if (!token) {
+                document.getElementById('configStatus').textContent = '❌ No Hugging Face token saved.';
+                return;
+            }
+
+            // 2. Show loading, clear previous
+            const loadingEl = document.getElementById('loading');
+            const actionDiv = document.getElementById('action-result');
+            const sentimentMeta = document.getElementById('sentimentMeta');
+            loadingEl.classList.remove('hidden');
+            actionDiv.style.background = '#f3f4f6';
+            actionDiv.textContent = '⏳ Analyzing...';
+            sentimentMeta.innerHTML = '';
+
+            try {
+                // 3. Call Hugging Face API
+                const hfResponse = await fetch(HF_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ inputs: review })
+                });
+
+                if (!hfResponse.ok) {
+                    const errText = await hfResponse.text();
+                    throw new Error(`Hugging Face error (${hfResponse.status}): ${errText}`);
+                }
+
+                const result = await hfResponse.json();
+                // Model returns array of predictions; take first (single sentence)
+                const prediction = Array.isArray(result) ? result[0] : result;
+                let label, confidence;
+
+                if (Array.isArray(prediction)) {
+                    // Sometimes it's an array of label/score objects
+                    const sorted = prediction.sort((a,b) => b.score - a.score);
+                    label = sorted[0].label;
+                    confidence = sorted[0].score;
+                } else {
+                    label = prediction.label;
+                    confidence = prediction.score;
+                }
+
+                // 4. Apply business logic
+                const decision = determineBusinessAction(confidence, label);
+
+                // 5. Update UI
+                actionDiv.style.background = decision.uiColor;
+                actionDiv.style.color = '#ffffff';
+                actionDiv.innerHTML = decision.uiMessage;
+
+                sentimentMeta.innerHTML = `
+                    <span class="sentiment-badge">🧠 ${label} (${(confidence*100).toFixed(1)}% confidence)</span>
+                    <span style="margin-left:0.75rem;">⚡ Action: <strong>${decision.actionCode}</strong></span>
+                `;
+
+                // 6. Log everything to Google Sheets
+                await logSentiment(review, label, confidence, decision.actionCode);
+
+            } catch (error) {
+                actionDiv.style.background = '#f3f4f6';
+                actionDiv.style.color = '#111827';
+                actionDiv.textContent = '❌ Analysis failed. Check token / network.';
+                sentimentMeta.textContent = `Error: ${error.message}`;
+                console.error(error);
+            } finally {
+                loadingEl.classList.add('hidden');
+            }
+        }
+
+        // -------------------------------------------------------------
+        //  EVENT LISTENERS & INIT
+        // -------------------------------------------------------------
+        window.onload = function() {
+            // Load saved token & gas url into inputs
+            loadSavedToken();
+            const savedUrl = localStorage.getItem(LS_URL_KEY);
+            if (savedUrl) {
+                document.getElementById('gasUrl').value = savedUrl;
+                document.getElementById('configStatus').textContent = '📎 Loaded saved Web App URL.';
+            }
+
+            // Attach listeners
+            document.getElementById('saveTokenBtn').addEventListener('click', saveToken);
+            document.getElementById('saveUrlBtn').addEventListener('click', saveGasUrl);
+            document.getElementById('analyzeBtn').addEventListener('click', analyzeAndAct);
+
+            // Optional: press Enter in textarea triggers analyze (convenience)
+            document.getElementById('reviewText').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && e.ctrlKey) {
+                    analyzeAndAct();
+                }
+            });
+        };
+    </script>
+</body>
+</html>
