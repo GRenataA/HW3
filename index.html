@@ -44,7 +44,7 @@
             min-height: 100px;
             resize: vertical;
         }
-        button {
+        button, .action-button {
             background: #3b82f6;
             color: white;
             border: none;
@@ -55,8 +55,10 @@
             cursor: pointer;
             margin-top: 1rem;
             transition: background 0.2s;
+            text-decoration: none;
+            display: inline-block;
         }
-        button:hover {
+        button:hover, .action-button:hover {
             background: #2563eb;
         }
         .status {
@@ -75,6 +77,15 @@
             font-weight: 600;
             transition: all 0.2s;
             text-align: center;
+        }
+        .action-button {
+            margin-top: 0.75rem;
+            background: white;
+            color: #111827;
+            border: 1px solid #d1d5db;
+        }
+        .action-button:hover {
+            background: #f3f4f6;
         }
         .sentiment-badge {
             display: inline-block;
@@ -201,54 +212,52 @@
         }
 
         // -------------------------------------------------------------
-        //  BUSINESS LOGIC (determine action) – ИСПРАВЛЕННАЯ ВЕРСИЯ
-        //  Теперь корректно обрабатывает метки LABEL_0, LABEL_1, LABEL_2
+        //  BUSINESS LOGIC (determine action)
+        //  Теперь возвращает также HTML для кнопки/ссылки
         // -------------------------------------------------------------
         function determineBusinessAction(confidence, label) {
-            // Приводим метку к верхнему регистру и удаляем лишние пробелы
             const upperLabel = String(label).toUpperCase().trim();
 
             let normalizedScore;
-            let displayLabel = upperLabel; // для возможного использования в UI
+            let displayLabel = upperLabel;
 
-            // Преобразуем метки от модели cardiffnlp в понятные и вычисляем normalizedScore
-            if (upperLabel === "LABEL_0") {
-                // Негативный отзыв
+            // Преобразуем метки модели cardiffnlp
+            if (upperLabel === "LABEL_0") {        // негативный
                 displayLabel = "NEGATIVE";
-                normalizedScore = 1.0 - confidence; // чем выше confidence, тем хуже (ближе к 0)
-            } else if (upperLabel === "LABEL_2") {
-                // Позитивный отзыв
+                normalizedScore = 1.0 - confidence;
+            } else if (upperLabel === "LABEL_2") { // позитивный
                 displayLabel = "POSITIVE";
-                normalizedScore = confidence; // confidence напрямую
-            } else if (upperLabel === "LABEL_1") {
-                // Нейтральный отзыв
+                normalizedScore = confidence;
+            } else if (upperLabel === "LABEL_1") { // нейтральный
                 displayLabel = "NEUTRAL";
-                normalizedScore = 0.5; // середина шкалы (неопределённость)
-            } else {
-                // Неизвестная метка – считаем нейтральной
                 normalizedScore = 0.5;
+            } else {
+                normalizedScore = 0.5; // неизвестная метка → нейтрально
             }
 
-            // Применяем пороги из матрицы задания
+            // Пороги из матрицы задания
             if (normalizedScore <= 0.4) {
                 return {
                     actionCode: "OFFER_COUPON",
-                    uiMessage: "🚨 We are truly sorry. Please accept this 50% discount coupon.",
-                    uiColor: "#ef4444", // красный
+                    uiMessage: "🚨 We are truly sorry.",
+                    uiColor: "#ef4444",
+                    buttonHtml: `<button class="action-button" onclick="alert('50% discount coupon: SAVE50')">🎟️ Get 50% off coupon</button>`,
                     displayLabel: displayLabel
                 };
             } else if (normalizedScore < 0.7) {
                 return {
                     actionCode: "REQUEST_FEEDBACK",
-                    uiMessage: "📝 Thank you! Could you tell us how we can improve?",
-                    uiColor: "#6b7280", // серый
+                    uiMessage: "📝 Help us improve!",
+                    uiColor: "#6b7280",
+                    buttonHtml: `<a href="#" class="action-button" onclick="alert('Opening survey...'); return false;">📋 Take detailed survey</a>`,
                     displayLabel: displayLabel
                 };
             } else {
                 return {
                     actionCode: "ASK_REFERRAL",
-                    uiMessage: "⭐ Glad you liked it! Refer a friend and earn rewards.",
-                    uiColor: "#3b82f6", // синий
+                    uiMessage: "⭐ Glad you liked it!",
+                    uiColor: "#3b82f6",
+                    buttonHtml: `<button class="action-button" onclick="alert('Referral link copied!')">👥 Refer a friend</button>`,
                     displayLabel: displayLabel
                 };
             }
@@ -276,7 +285,7 @@
             try {
                 const res = await fetch(url, {
                     method: 'POST',
-                    body: form  // no custom headers → no preflight
+                    body: form
                 });
                 const text = await res.text();
                 if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
@@ -299,24 +308,21 @@
                 return;
             }
 
-            // 1. Retrieve token
             const token = localStorage.getItem(LS_TOKEN_KEY);
             if (!token) {
                 document.getElementById('configStatus').textContent = '❌ No Hugging Face token saved.';
                 return;
             }
 
-            // 2. Show loading, clear previous
             const loadingEl = document.getElementById('loading');
             const actionDiv = document.getElementById('action-result');
             const sentimentMeta = document.getElementById('sentimentMeta');
             loadingEl.classList.remove('hidden');
             actionDiv.style.background = '#f3f4f6';
-            actionDiv.textContent = '⏳ Analyzing...';
+            actionDiv.innerHTML = '⏳ Analyzing...';
             sentimentMeta.innerHTML = '';
 
             try {
-                // 3. Call Hugging Face API
                 const hfResponse = await fetch(HF_API_URL, {
                     method: 'POST',
                     headers: {
@@ -332,12 +338,10 @@
                 }
 
                 const result = await hfResponse.json();
-                // Model returns array of predictions; take first (single sentence)
                 const prediction = Array.isArray(result) ? result[0] : result;
                 let label, confidence;
 
                 if (Array.isArray(prediction)) {
-                    // Sometimes it's an array of label/score objects
                     const sorted = prediction.sort((a,b) => b.score - a.score);
                     label = sorted[0].label;
                     confidence = sorted[0].score;
@@ -346,27 +350,27 @@
                     confidence = prediction.score;
                 }
 
-                // 4. Apply business logic (исправленная функция)
                 const decision = determineBusinessAction(confidence, label);
 
-                // 5. Update UI
+                // Обновляем UI: цвет + сообщение + кнопка/ссылка
                 actionDiv.style.background = decision.uiColor;
                 actionDiv.style.color = '#ffffff';
-                actionDiv.innerHTML = decision.uiMessage;
+                actionDiv.innerHTML = `
+                    <div style="margin-bottom: 0.5rem;">${decision.uiMessage}</div>
+                    ${decision.buttonHtml}
+                `;
 
-                // Показываем исходную метку (LABEL_0/1/2) и confidence, а также действие
                 sentimentMeta.innerHTML = `
                     <span class="sentiment-badge">🧠 ${label} (${(confidence*100).toFixed(1)}% confidence)</span>
                     <span style="margin-left:0.75rem;">⚡ Action: <strong>${decision.actionCode}</strong></span>
                 `;
 
-                // 6. Log everything to Google Sheets
                 await logSentiment(review, label, confidence, decision.actionCode);
 
             } catch (error) {
                 actionDiv.style.background = '#f3f4f6';
                 actionDiv.style.color = '#111827';
-                actionDiv.textContent = '❌ Analysis failed. Check token / network.';
+                actionDiv.innerHTML = '❌ Analysis failed. Check token / network.';
                 sentimentMeta.textContent = `Error: ${error.message}`;
                 console.error(error);
             } finally {
@@ -378,7 +382,6 @@
         //  EVENT LISTENERS & INIT
         // -------------------------------------------------------------
         window.onload = function() {
-            // Load saved token & gas url into inputs
             loadSavedToken();
             const savedUrl = localStorage.getItem(LS_URL_KEY);
             if (savedUrl) {
@@ -386,16 +389,11 @@
                 document.getElementById('configStatus').textContent = '📎 Loaded saved Web App URL.';
             }
 
-            // Attach listeners
             document.getElementById('saveTokenBtn').addEventListener('click', saveToken);
             document.getElementById('saveUrlBtn').addEventListener('click', saveGasUrl);
             document.getElementById('analyzeBtn').addEventListener('click', analyzeAndAct);
-
-            // Optional: press Enter in textarea triggers analyze (convenience)
             document.getElementById('reviewText').addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && e.ctrlKey) {
-                    analyzeAndAct();
-                }
+                if (e.key === 'Enter' && e.ctrlKey) analyzeAndAct();
             });
         };
     </script>
