@@ -201,39 +201,55 @@
         }
 
         // -------------------------------------------------------------
-        //  BUSINESS LOGIC (determine action)
+        //  BUSINESS LOGIC (determine action) – ИСПРАВЛЕННАЯ ВЕРСИЯ
+        //  Теперь корректно обрабатывает метки LABEL_0, LABEL_1, LABEL_2
         // -------------------------------------------------------------
         function determineBusinessAction(confidence, label) {
-            // 1. Normalize score: 0 (worst) ... 1 (best)
-            let normalizedScore = 0.5; // fallback neutral
+            // Приводим метку к верхнему регистру и удаляем лишние пробелы
+            const upperLabel = String(label).toUpperCase().trim();
 
-            if (label === "POSITIVE") {
-                normalizedScore = confidence;
-            } else if (label === "NEGATIVE") {
-                normalizedScore = 1.0 - confidence;
+            let normalizedScore;
+            let displayLabel = upperLabel; // для возможного использования в UI
+
+            // Преобразуем метки от модели cardiffnlp в понятные и вычисляем normalizedScore
+            if (upperLabel === "LABEL_0") {
+                // Негативный отзыв
+                displayLabel = "NEGATIVE";
+                normalizedScore = 1.0 - confidence; // чем выше confidence, тем хуже (ближе к 0)
+            } else if (upperLabel === "LABEL_2") {
+                // Позитивный отзыв
+                displayLabel = "POSITIVE";
+                normalizedScore = confidence; // confidence напрямую
+            } else if (upperLabel === "LABEL_1") {
+                // Нейтральный отзыв
+                displayLabel = "NEUTRAL";
+                normalizedScore = 0.5; // середина шкалы (неопределённость)
             } else {
-                // unknown label → treat as neutral / low confidence
+                // Неизвестная метка – считаем нейтральной
                 normalizedScore = 0.5;
             }
 
-            // 2. Thresholds according to assignment
+            // Применяем пороги из матрицы задания
             if (normalizedScore <= 0.4) {
                 return {
                     actionCode: "OFFER_COUPON",
                     uiMessage: "🚨 We are truly sorry. Please accept this 50% discount coupon.",
-                    uiColor: "#ef4444" // red
+                    uiColor: "#ef4444", // красный
+                    displayLabel: displayLabel
                 };
             } else if (normalizedScore < 0.7) {
                 return {
                     actionCode: "REQUEST_FEEDBACK",
                     uiMessage: "📝 Thank you! Could you tell us how we can improve?",
-                    uiColor: "#6b7280" // gray
+                    uiColor: "#6b7280", // серый
+                    displayLabel: displayLabel
                 };
             } else {
                 return {
                     actionCode: "ASK_REFERRAL",
                     uiMessage: "⭐ Glad you liked it! Refer a friend and earn rewards.",
-                    uiColor: "#3b82f6" // blue
+                    uiColor: "#3b82f6", // синий
+                    displayLabel: displayLabel
                 };
             }
         }
@@ -330,7 +346,7 @@
                     confidence = prediction.score;
                 }
 
-                // 4. Apply business logic
+                // 4. Apply business logic (исправленная функция)
                 const decision = determineBusinessAction(confidence, label);
 
                 // 5. Update UI
@@ -338,6 +354,7 @@
                 actionDiv.style.color = '#ffffff';
                 actionDiv.innerHTML = decision.uiMessage;
 
+                // Показываем исходную метку (LABEL_0/1/2) и confidence, а также действие
                 sentimentMeta.innerHTML = `
                     <span class="sentiment-badge">🧠 ${label} (${(confidence*100).toFixed(1)}% confidence)</span>
                     <span style="margin-left:0.75rem;">⚡ Action: <strong>${decision.actionCode}</strong></span>
